@@ -25,4 +25,4 @@
 
 <br>
 
-<img src="img/readme_book.jpg" width="50%" height="50%">  
+<img src="img/readme_book.jpg" width="30%" height="30%">  
