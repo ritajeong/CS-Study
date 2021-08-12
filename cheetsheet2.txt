@@ -1,0 +1,283 @@
+2020.6.24에 직접 작성한 cheatsheet입니다. 
+6단원(동기화)~13단원(파일시스템, 스토리지)
+책 : 운영체제 10판 퍼스트북
+--------------------------------------
+
+
+processing syncronization의 핵심은 data consistency를 보장하자 
+race condition : 여러 개의 프로세스가 shared data에 접근함. 프로그램 수행의 결과가 접근 순서에 따라 바뀔 수 있다
+생산자-소비자 유한버퍼문제, 공유데이터, 스핀락. count++과 - -를 atomic하게 수행하면 된다. count+ +가 끝날 때 까지 다른 프로세스가 절대 끼어들이 않도록 해야한다. 공유변수에 접근할 때 오직 하나의 프로세스만 공유변수에 접근하도록 보장해야함
+선점커널에서는 경쟁조건이 발생될 개연성이 높다. 커널 내부의 코드는 여러 프로세스들이 동시에 접근할 개연성이 높다.
+Critical Section problem : 세가지 프러퍼티 보장. 뮤익, progress, bounded waiting.
+mutual exclusion : 임계영역에는 오직 하나의 프로세스만 수행되어야한다.
+progress : 진입구역에서 기다리는 p가 하나이상일때 어떤 프로세스는 반드시 임계영역에 진입해야한다.
+bounded waiting : 다른 프로세스가 크리티컬 섹션에 진입하도록 허용되야하는 횟수에 한도가 있어야한다.
+피터슨 솔루션 : 1,2,3보장
+바이너리 세마포(뮤텍스) : 1,2보장. 3은 waiting-array 큐를 둬서 보장.
+컨택스위치 없애는 법 : 인터럽트를 불가하게 만듬. 선점지원os의 경우 인터럽트가 끝날때 스케줄링 디시전을 내림. 그런데, 인터럽트를 disable 한다는 소리는, 멀티프로세서시스템 의 경우, 모든 cpu에게 전달해줘야한다. 오버헤드 있을 수 있고, 딜레이 발생할 수 있고, 모든 cpu에게 전달해야하므로 비효율적일 수 있다.
+그래서 동기화를 위한 hw지원 : test and set, swap, atomic variable.
+test and set : 1,2,보장. 3은 waiting-array 큐를 둬서 보장. atomic하지 않을 땐 보장안됨
+swap : 1,2보장. 3은 waiting-array 큐를 둬서 보장
+atomic variable in linux : 커널은 race condition빈번. 이를 방지하기 위함
+세마포 : 피터슨, test and set, swap보다 덜 복잡하고 쉽게 사용가능.
+뮤텍스(바이너리세마포) : 세마포 1로 초기화.  임계영역 앞에 wait(감소), 나갈때 signal(증가). 뮤익보장
+난점 : 와일루프에 스핀락(busy waiting).
+해결책 : block, wakeup
+block : critical-section 앞의, 엔트리섹션에서 기다리고 있는 프로세스들은 웨이팅큐에 넣고, 웨이팅큐에 있는 태스크는 waiting state로 만든다.
+wakeup : critical-section에서 벗어날 경우, 웨이팅큐에서 하나 깨워야함.(wakeup)
+대기시간 짧으면 스핀락, 오래기다리면 세마포가 더 유용함. 짧게 기다릴거면 굳이 웨이팅으로 전환하는 오버헤드가 더 클 수 있어서. 오래기다릴때는 굳이 와일루프를 계속 돌필요없으니까.
+리눅스에서는 busy waiting있는게 스핀락, 없는걸 세마포라고한다. 오래기다릴 경우 세마포.
+모니터 : high level abstraction. 프로그래머가 쉽고 효과적으로 쓰게하려고. signal을 연속적으로 쓰는 것 처럼
+구성요소 : 공유데이터, 연산, 초기화코드.
+뮤익을 보장하기 위해 condition변수, wait,signal필요함
+데드락 : infinite waiting. 무한정대기
+라이브니스 : 어떤 경우에도 make progress 보장해야함.
+데드락 예시) p0,p1 각각 세마포 1초기화. wait각각 수행해서 세마포값 0이됨. 무한정대기
+유한버퍼문제wait(full), wait(mutex), c.s, signal(mutex), signal(empty)
+식사하는철학자 문제. wait(chopstick[i], wait(chopStick[(i+1)%5]. c.s. signal(chopstick[i], signal(chopstick[(i+1)%5]
+POSIX mutes lock 
+#include <pthread.h>
+pthread_mutex_t mutex;
+pthread_mutex_init(&mutex, NULL);
+변수생성, 락-언락은 페어로, 변수해체
+
+int pthread_mutex_inti(pthread_mutex_t * mtuex, const pthread_mutexattr_t *attr);
+int pthread_mutex_lock(pthread_mutex_t *mutex);
+int pthread_mutex_unlock(pthread_mutex_t *mutex);
+int pthread_mutex_destroy(pthread_mutex_t *mutex);
+
+POSIX semaphore
+#include <semaphore.h>
+sem_t sem;
+sem_inti(&sem, 0,1); //세마포변수주소, 한개의 프로세스에서 사용, 세마포 초기값 1.
+세마포 초기화, wait, post
+데드락 : 다른 프로세스가 소유중인 리소스를 접근할 때 무한정 블락되는 현상이 발생할 수도있다.
+2개의 디스크가 있을때, 자기가 소유한 디스크는 놓지않으면서 서로의 것을 요구하는 상황
+bridge crossing example. 자동차 물에 버림(kill), 자동차 후진(rollback)
+데드락 복구방법 : kill, rollback
+데드락 디텍션 : 데드락이 발생된 것을 검출해냄
+Resource Allocation Graph : ㅇ프로세스, ㅁ리소스. 인스턴스는 ㅁ안에 점으로 표시. 
+리퀘스트엣지 : ㅇ->ㅁ
+어사인엣지 : ㅁ->ㅇ
+데드락 필요조건 : 
+뮤익-오직 하나의 프로세스만 c.s에 있을 수 있음,
+hold and wait특정 리소스를 소유한 p가 다른 리소스를 요청한 경우 다른 리소스가 이미 hold된 상황에는 wait해야함 .
+비선점-리소스를 사용하는데 다른p가 해당리소스를 가로채서(선점허용한경우) 데드락발생안함 즉 먼저 수행한 p가 자발적으로 리소스를 놓아야지 다른 p가 사용가능함.
+순환대기-사이클생김
+사이클없으면 데드락발생x. 
+사이클있으면 -싱글인스턴스면 데드락발생(필요충분조건), 멀티플인스턴스면 필요조건.
+deadlock avoidance : 회피. 데드락이 발생될 것 같으면 프로그램을 잠시 멈춤
+deadlock preventio : 필요조건의 하나를 잘라버리자. safe한 state일때 프로그램은 progress시킴
+safe state : 데드락이 발생하지 않는 state.
+deadlock recover : kill, roolback
+deadlock detection : 그래프로 알아냄
+리눅스 : os에 데드락에 대한 핸들링 없음. 문제를 무시함. 한마디로 데드락이 발생하지 않을거라고 가정하고 처리함
+deadlock prevention : 필요조건없애보자 side effect, infeasibility가 존재할 수 있음
+뮤익 : 공유가 안되는 자원에서 뮤익부정불가함. infeasibile
+hold and wait : 수행하기 전에 모든 자원을 할당받아봐-그러나 자원유틸성 떨어짐, 기아상태 발생가능 / 아무것도 소유안할때 리퀘스트함-자원유틸성떨어짐. side effect 있음
+비선점 : 선점을 허용하면 데드락 발생안함. cpu는 선점허용해야함. 그러나 프린터는 불가. infeasible. 많은 자원 입장에서는 비현실적임
+순환대기 : side effect있음. 그러나 토탈오더링을 설정하면 할만함. 현실적으로 이거 사용
+deadlock avoidance : 데드락 발생할것같으면 잠시멈춤. 싱글인스턴스-그래프 그림. 예약간선 점선으로. 멀티플인스턴스-뱅커스알고리즘.
+뱅커스알고리즘 : safe한 스테이트를 보장하기 위해 allocate+demand <=available. allocated+demand = need
+이를 토대로 safe한 시퀀스(순서)를 정해야함.
+deadlock detection : resource allocation graph에서 프로세스만 떼어놓은 그래프. wait for graph
+avoidance에서 미래를 봤다면(need변수중요) detection에서는 현재가 중요. need값을 request값으로 변경
+deadlock recovery : kill, rollback
+kill : 모두 죽이기, 스텝바이스텝으로 죽이기(정책에따라 다름)
+rollback : 데드락이 발생안된 스테이트로 돌아감.  이때, 문맥이 저장된 체크포인트로 롤백함.
+9장
+주소바인딩 : 주소결정 스텝에 따라  : symbolic -> relocatable -> absolute
+절대주소가 결정되는 시점에 따라 세가지
+컴파일타임 : 실제 시작위치가 바뀔경우 리컴파일해야함. 매우 불편
+로드타임 : 시작주소가 바뀔 수 있으므로, relocatable code형태, 즉 프로그램 시작주소부터 얼만큼 떨어져있는지. 로더에 의해 결정됨. 
+*실행타임 : 쫓겨날 수도 있고, 동적으로 결정되기 때문에 주소결정은 실행타임에 주로 결정된다.주소결정이 런타임떄까지 밀림. 프로세스는 메모리 위치를 계속 바꿀 수도 있어서.
+주소변환 : 로지컬주소->피지컬주소
+로지컬주소(프로세스의 주소공간 생각하기. 스택,힙,데이터,코드)
+피지컬주소 : 실제 메모리주소
+맵핑테이블 필요함. 컴파일타임, 로드타임 바인딩에서는 구분할 방법이 없다. l.a p.a동일함. 그러나 실행타임에서는 구분된다. 따라서 주소변환이 필요하다.
+dynamic loading : 로딩을 실행타임까지 가능한한 미룬다. 루틴(함수나 프로시저)이 호출되기 전까지는 로딩안됨.
+호출안하는 경우, 아예 메모리로 로딩안시킴. 장점 : 메모리 공간을 보다 효과적으로 쓸 수있다. 특히나 호출이 많을때 효과적임
+dynamic linking : 링킹을 실행타임까지 가능한한  미룬다. 수행될떄까지. 왜 유용하고 중요하냐? stdc 라이브러리 항상 헤더파일. 링킹을 실행타임까지 미루는 방법임. shared library에 매우 효과적으로 사용된다. 
+stub : 나중에 링킹할때, 어떻게 해야할지 알려주는 코드가 담겨있음.
+dynamic loading vs dynamic linking 차이점)
+os도움 필요없음 vs 도움 필요함
+라이브러리에 의해 제공 vs 다른 주소공간에 접근해야함
+static library : 처음에 컴파일하고 링킹할떄, 라이브러리를 포함시킴. 각각의 프로그램에 라이브러리가 포함된다. 
+shared library  :  라이브러리를 공유함. 각각의 프로그램은 stub이라는 코드가 포함됨. stub에는, 나중에 라이브러리를 어떻게 링킹할건지에 대한 정보가 나옴. 메모리 효과적 사용, 업데이트 부담 없음.
+스와핑
+backing store : 스토리지 공간에서 스와핑을 위해 할당된 영역 .스왑아웃된 프로세스를 저장하기 위한 용도.
+요청한 프로세스가 메모리에없다. 디스크에 접근해야함. backing stor에 접근해야함
+메모리에 접근하는 시간 < 디스크에 접근하는 시간
+미래에 접근할 프로세스를 , 가능한한 피지컬 메모리에 저장해두는게 좋다.
+contiguous allocation : 연속적으로 할당
+MMU : relocation, limit
+address translation : relocation regi + logical address = phisical address
+memory protection : logical address <= limit register
+ 이슈 1 : dynamic storage allocation. hole 어떻게 프로세스를 빈 공간에 할당할것인가.hole의 크기는 최소 프로세스의 크기보다 커야한다.
+홀이 여러개면? firstfit, best fit, worst fit
+이슈 2 : fragmentation 
+-external : contiguous allocation에서 발생함. 비어있는 공간의 총 합은 프로세스 크기보다 큼. 그러나 홀들이 분산되어서, 모든 홀들이 프로세스크기보다 각각 작을때.
+-internal : 자투리 공간이 남을 수 있다. 그 자투리 공간이 영영 사용안될때.
+external의 해결법 : 비어있는 홀들을 합쳐서 큰 블럭을 만듬 = compaction
+페이징 : 요청하는 페이지가 피지컬메모리에 없을 경우 디스크로부터 해당 페이지를 읽어들여서 피지컬메모리로 로딩해야함
+로지컬은 페이지로 분할, 피지컬은 프레임으로 분할.
+페이지 넘버와, 프레임테이블을 매핑시키는 페이지넘버를 보고, 그에 해당하는 프레임을 찾아간다. 테이블을 참고해서 페이지테이블을 룩업해라
+ 
+(프레임 넘버의 시작주소 = 프레임 넘버 * 프레임 사이즈)
+이슈 1 : internal fragmentation
+external fragmentation 발생x. 피지컬 메모리에 연속적으로 저장될 필요가 없다.
+internal fragmentation 의 가장 대표적인 예. 페이지 크기가 고정되어있어서. 프로세스의 크기가, 페이지 크기의 배수가 아닐 경우,n못써서 남은 자투리 공간이 생김. 영영 사용 못함.ninternal fragmentation으로 낭비되는 공간과npage-table 크기 간에 트레이드오프 관계가 발생한다.
+이슈 2 : managing free frames
+빈 프레임을 어떻게 관리하는가. 빈 프레임의 새로운 프로세스가 생성됐으면, 새 프로세스를위한 프레임을 할당해야한다. 그러면 빈 프레임의 리스트나, 정보를 알아야함.
+MMU
+paging에서는, register와 TLB이다
+PTBR, PTLR이 주어진다.(베이스, 랭쓰)
+TLB는 매우 빠르게 룩업하도록 설계된 하드웨어 캐시임.TLB에서 원하는 주소를 찾으면, 메모리에 접근할 필요가 없음.TLB의 히트률을 높이는 게 중요하다.TLB는 ASID라는 속성을 가질 수 있음(address space identifier) : TLB에 프로세스 아이디를 추가할 수 있음. 
+p#,f#의 매핑 정보를 담음
+페이징의 메모리프로텍션
+valid,invalid bit를 사용한다. valid : 메모리프로텍션 유효하다, invali : 메모리프로텍션 지원x. 즉, 자기영역이 아님.
+PTLR :페이지 테이블 길이 레지스터
+페이지크기의 배수만큼 프로세스가 할당안될수도있다.
+페이지 4까지 는 10240이고,
+페이지5의 끝은 10468임. 실제 크기는 10240~10468임
+페이지테이블 구조
+PTLR :페이지 테이블 길이 레지스터
+페이지크기의 배수만큼 프로세스가 할당안될수도있다.
+페이지 4까지 는 10240이고,
+페이지5의 끝은 10468임. 실제 크기는 10240~10468임
+
+32비트 주소체계를 쓴다면, 각각의 프로세스가 32비트의 로지컬 주소공간을 사용
+로지컬 주소공간을 자름. 하위비트는, 페이지크기기준 4KB일경우, 
+4KB는 2^12
+지수비트만큼 결정된다.
+상위비트는 20비트를 가진다.
+ 
+상위는 페이지넘버. 엔트리갯수가 2^20 만큼 가질수있다.
+
+계층적페이지테이블. 투레벨,쓰리레벨
+리눅스 3레벨 : task_struct 는 pcb에 해당됨.
+mm_struct는 메모리를 관리해주는 구조체. pgb는 페이지 글로벌 디렉터리임. 
+pgb는 첫번째 테이블의 주소를 가짐.
+ 
+pgd,룩업, pmd룩업, pte룩업.
+해시 페이지테이블 : 해시페이지 테이블 : 페이지넘버->해시펑션을 거쳐서, 해시테이블에 저장함.
+충돌은 체인으로 해결.
+
+역페이지 테이블 : f#, p#. os에 테이블 하나만 둔다. pid필수. 메모리공간을 줄일수있음. os에 하나만 있으면 되니까.
+그러나 서치타임이 증가한다.
+단점 : 전체테이블 서치해야함.
+세그멘테이션 :페이지와 비슷
+segment table은 S#, base, limit으로 저장된다.
+세그먼트 넘버, 시작주소, 세그먼트 크기
+/	 contiguous allocation	paging	segmentation
+address translation	relocation register+offset	page table
+이진수를 잘라서, 
+페이넘버&옵셋(2^n승일때 n비트가 옵셋)	segment table을 룩업
+base address+offset
+memory protection	limit register보다
+ 옵셋은 작아야함	page table lookup
+valid, invalid bits	limit은 옵셋보다 작아야함
+issues	fragmentation
+firstfit, 
+bestfit, 
+worstfit.	page table size를 줄이자
+계층(2레벨, 3레벨), 
+해쉬(페이지넘버를 해쉬펑션),
+역페이지테이블(프레임넘버,페이지넘버, pid)	 
+
+
+
+
+
+
+
+damand paging : 요구가 있을 때만 페이징함.
+v/i bits : invalid로 초기화. 별도의 internal 테이블을 둠. 그 테이블에 룩업해서 없는지 illegal 인지 구분 가능. 
+v가 set이면 메모리에 있고, invalid 가 set이면 메모리에 없거나 illegal 하다.
+페이지폴트 : 현재 피지컬메모리에 없는 페이지를 요청했을 때, page-fault 가 발생할 수 있다. 해당 페이지를 메모리로 로딩해서, 수행할 수 있도록
+페이지폴트 트랩 6가지 스텝
+1.	페이지 폴트가 발생 = 페이지테이블에서 valid-invalid-bits 에서 해당 페이지가 invalid 인 상황임. 해당 페이지가 메모리에 없는 상황. 단순히 메모리에 없는건지 illegal인지 확인해야함. 또다른 테이블을 룩업해야함. os가 또다른 테이블을 룩업한다. 그러면 page-fault-trap 에서는 단순히 메모리에 없는 것을 해결해야함. invalid 일 경우 아예 프로그램 수행을 멈춤. 메모리 prrotection을 위배해서. 단순히 메모리에 없는 경우는 비어있는 프레임을 확보해야함.
+2.	비어있는 프레임을 확보함
+3.	해당 프레임에 페이지를 올린다. 해당 페이지를 그 페이지에 스왑인한다. 스왑인 할 때는 프로세스 스테이트를 웨이팅으로 전환해야한다. 디스크로 접근하는 액션이기 떄문이다. 
+4.	페이지 테이블을 업데이트한다. 기존에는,   없는 페이지가 어떻게 되어있나? 기존엔 없었다. 프레임이 비어있었다. 그곳을 채워준다.
+5.	이제는 인벨리드가 아니기 때문에 valid invalid bits를 valid로 세팅해준다.
+6.	테이블 업데이트까지 끝나서, 새로운 인스트럭션을 수행할 수 있다. 페이지 폴트가 발생된 인스트럭션부터 재수행하면 된다. 
+demand-paging 을 쓰면, 가능한 한 페이지폴트를 줄이는 게 중요하다.
+페이지교체 : 페이지폴트의 갯수를 줄이자. 없을경우가 문제가됨. 페이지 교체가 발생해야함. 누군가를 쫓아내고, 새 페이지를 해당 프레임으로 로딩해야함. 희생양은 victim-frame.
+1. 해당 vp를 스왑아웃한다
+2. 해당 페이지의 v-i bit를 invalid로 바꿔준다.
+3. 그러면 새로운 페이지를 스왑인 해야한다.
+페이지테이블을 업데이트한다. valid table로 업데이트함.
+two copies 발생(스왑아웃, 스왑인). 오버헤드가 크다.
+modify bit를 두어서 해당 비트가 수정되었는지, 안되었는지 확인할 수 있도록 지원해주면,
+m.b가 0이면 스왑아웃 연산이 없어도 가능하다.
+FIFO
+elady의 기현상:프레임 증가하면 페이지 증가할 수 있다.  
+optimal 미래에 가장 늦게오는거 교체
+LRU 가장 최근에 사용이 되지 않은 페이지를 쫓아냄. 카운터나 스택으로 구현
+lru approximation : 레퍼런스 비트. 1이면 참조됨
+additional reference bits algorithm : 레퍼비트 여러개둠. 시간차를 두고
+second chand : = clock algo.  최초로 나오는 0번 레퍼런스비트를 갖는 페이지를 빅팀으로 한다.
+레퍼런스비트와 모디파이비트의 차이점)
+전자 :  해당페이지를 참조했는지 ?
+후자 :  해당페이지를 수정했는지?
+enhanced second chance : 레퍼,모디를 00 01 10 00 순으로 우선순위 높게줘서 교체.
+lfu : 가장 smallest 카운터를 갖는 것을 victim한다.
+mfu :오히려 가장 많은 카운터를 갖는 페이지를 교체한다.
+
+
+
+
+
+erase unit= block, erase before write => garbage collection 야기
+wear-leveling : 균등하게 write해주기
+host : io버스로 접근 / 
+network : 스토리지 서버가 있음. 클라이언트들은 해당 스토리지 서버에 네크웤을 통해서 접속함 / 
+storage area network :스토리지 어레이를 접근할 때 쓰는 프로토콜로 SAN을 사용함. FC매체를 주로 사용.
+seektime! 
+FCFS
+SSTF(Shortest seek time first) : 가장 가까운 것먼저. 기아발생가능
+SCAN(elevator) : 안쪽, 밖으로 움직이면서 중간에 만나는 요청을 허용. Look : 끝까지 안감
+C-SCAN(one direction) : 한쪽방향만 허용. 끝에가면 다시 첫지점으로 . C-Look : 끝까지 안가고 한방향
+포맷 : physical formatting -os설치시 파티션나누기  / logical formatting(흔한거)
+스왑스페이스(backing store) 
+RAID : Redundant array of inexpensive(independent) disk .디스크를 병렬로 연결
+striping : 한개의 파일이 다섯개의 디스크에 걸쳐서 저장됨.
+throughput : bitlevel striping(단위작음). blocklevel striping(단위큼). 
+fault-tolerance : 디스크 하나는 신뢰성이 높은데, 디스크 갯수가 많아지면 많아질수록 고장날 확률이 높아짐
+미러링방식 : a라는 파일이 세가지 디스크에 복제돼서 저장하면 첫번째 고장나도 다른 디스크에 접근해서 쓰면 됨
+패리티방식(XOR) : 
+레이드 0 같은 경우, redundancy없음. striping만함.
+레이드 1  미러링만 씀.
+레이드 2는 무시.
+레이드 3은 패리티 디스크. 패리티 + bit-level striping.
+레이드 4는, 패리티 + block-level striping. 레이드 4는, 패리티 + block-level striping. 디스크 하나의 bandwidth를 낭비
+레이드 5는  패리티를 분산해서 저장함
+  a1   a2   a1,a2(패리티연산)
+  a3  a3,a4    a4
+레이드4의 확장판임. block-level striping
+레이드6은, 신뢰성을 향상시킴
+  p+q redundancy라는 테크닉을 써서, 두개의 디스크가 고장나더라도 복구가 가능한.
+  레이드 1~5까지는 1개의 디스크만 failure를 복구가능함.
+  그러나 레이드 6는 두개의 디스크가 동시에 고장나더라도 
+  복구가 가능하도록 P+Q redundancy라는 error correcting 테크닉을 썼음.
+hot spare : 자동차 spare tire. 평상시엔 ㅇ안쓰임. 고장날떄 대체용ㅇ으로 쓰임.
+Rebuilding. 복구하는 과정을 리빌딩이라고함.  리빌딩 된 데이터가  hot spare에 저장됨.
+패리티가 왜 fault-tolerance 에 효과적으로 쓰이는지 기억하기 ! 미러링 대비 어떰?미러링은 스토리지 용량 두배 필요함  패리티는, 패리키가 계산되는 디스크의 갯수중 하나의 공간만 redundancy로 사용됨.  그래서 스토리지 efficiency 측면에서는 패리티 기법이 훨씬더 용이하다.
+
+파일시스템 : create, write, read, fseek,delete
+FCB ( file-control-block) : 파일포인터, 파일오픈카운터, 파일위치, 접근권한
+디스크에 저장되는 정보 : 부트컨트롤블럭, 볼륨컨드롤블럭, 디렉터리 스트럭쳐, FCB
+mount table
+open file table : FCB의 카피본
+system-wide-open-file-table : 이미 오픈되고 나서는 있으니까 여기서 찾음.
+per-process-open-file-table(프로세스별로 별도로 필요한 정보. offset, protection(r,w,e,permission), system테이블 포인터) 
+VFS : object-oriected 방식을 재현. 동일한 시스템콜 인터페이스를 써서, 여러개의 파일시스템에 적용할 수 있음
+VFS 인터페이스 : 프로그램에서 사용하는 read,write,open과 같은 시스템콜은 실제 파일시스템의 api가 아님.
+ VFS의 인터페이스임.  해당 파일이 위치한 파일시스템을 보고,VFS에서 자동으로, 해당파일시스템에 대한 api로 변환해줌.
+Vnode란 VFS에서 관리하고 있는 아이노드임.여러개의 시스템에 별도의 파일이있음 그것들 구분짓기 위해 vnode를 도입. 유니크해야함.  A,B,C에 각각 아이노드가 1번인게 있을 수 있음 vnode를 도입해서 1,2,3과 같이 할당하면, 여러 시스템의 동일한 아이노드 가진것들을 구분할 수 잇게됨.
+
+
+
+
+
